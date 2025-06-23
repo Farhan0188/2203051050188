@@ -1,103 +1,236 @@
-import Image from "next/image";
+'use client';
+import { useState } from 'react';
+// import { isValidUrl, isValidShortcode } from '@/lib/utils';
+import { isValidUrl, isValidShortcode } from './lib/util';
 
-export default function Home() {
+type ShortUrlItem = {
+  originalUrl: string;
+  shortUrl: string;
+  expiresAt: string;
+  shortcode: string;
+};
+
+export default function UrlShortener() {
+  const [urls, setUrls] = useState<Array<{
+    originalUrl: string;
+    validity: string;
+    shortcode: string;
+  }>>([{ originalUrl: '', validity: '30', shortcode: '' }]);
+  
+  const [shortenedUrls, setShortenedUrls] = useState<ShortUrlItem[]>([]);
+  const [errors, setErrors] = useState<Record<number, string>>({});
+
+  const validateInputs = (index: number) => {
+    const newErrors = { ...errors };
+    const current = urls[index];
+    
+    // Validate URL
+    if (!current.originalUrl) {
+      newErrors[index] = 'URL is required';
+    } else if (!isValidUrl(current.originalUrl)) {
+      newErrors[index] = 'Invalid URL format';
+    }
+    // Validate validity (if provided)
+    else if (current.validity && isNaN(Number(current.validity))) {
+      newErrors[index] = 'Validity must be a number';
+    }
+    // Validate shortcode (if provided)
+    else if (current.shortcode && !isValidShortcode(current.shortcode)) {
+      newErrors[index] = 'Shortcode must be 4-20 alphanumeric characters';
+    } else {
+      delete newErrors[index];
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleInputChange = (index: number, field: string, value: string) => {
+    const newUrls = [...urls];
+    newUrls[index] = { ...newUrls[index], [field]: value };
+    setUrls(newUrls);
+    
+    if (errors[index]) {
+      validateInputs(index);
+    }
+  };
+
+  const addUrlField = () => {
+    if (urls.length < 5) {
+      setUrls([...urls, { originalUrl: '', validity: '30', shortcode: '' }]);
+    }
+  };
+
+  const removeUrlField = (index: number) => {
+    if (urls.length > 1) {
+      const newUrls = urls.filter((_, i) => i !== index);
+      setUrls(newUrls);
+      
+      const newErrors = { ...errors };
+      delete newErrors[index];
+      setErrors(newErrors);
+    }
+  };
+
+  const shortenUrls = async () => {
+    // Validate all inputs first
+    const allValid = urls.every((_, index) => validateInputs(index));
+    if (!allValid) return;
+
+    try {
+      const results = await Promise.all(
+        urls.map(async (url) => {
+          const response = await fetch('/api/shorturls', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              url: url.originalUrl,
+              validity: url.validity ? parseInt(url.validity) : undefined,
+              shortcode: url.shortcode || undefined,
+            }),
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to shorten URL: ${url.originalUrl}`);
+          }
+          
+          return await response.json();
+        })
+      );
+      
+      setShortenedUrls([...shortenedUrls, ...results]);
+    } catch (error) {
+      console.error('Error shortening URLs:', error);
+      alert('An error occurred while shortening URLs. Please try again.');
+    }
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="container mx-auto p-4 max-w-4xl">
+      <h1 className="text-2xl font-bold mb-6">URL Shortener</h1>
+      
+      <div className="space-y-4">
+        {urls.map((url, index) => (
+          <div key={index} className="border p-4 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">
+                  Original URL *
+                </label>
+                <input
+                  type="text"
+                  value={url.originalUrl}
+                  onChange={(e) => handleInputChange(index, 'originalUrl', e.target.value)}
+                  className="w-full p-2 border rounded"
+                  placeholder="https://example.com/very-long-url"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Validity (minutes)
+                </label>
+                <input
+                  type="number"
+                  value={url.validity}
+                  onChange={(e) => handleInputChange(index, 'validity', e.target.value)}
+                  className="w-full p-2 border rounded"
+                  placeholder="30"
+                  min="1"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Custom Shortcode (optional)
+                </label>
+                <input
+                  type="text"
+                  value={url.shortcode}
+                  onChange={(e) => handleInputChange(index, 'shortcode', e.target.value)}
+                  className="w-full p-2 border rounded"
+                  placeholder="my-custom-code"
+                />
+              </div>
+              
+              <div className="flex items-end">
+                {urls.length > 1 && (
+                  <button
+                    onClick={() => removeUrlField(index)}
+                    className="bg-red-500 text-white p-2 rounded hover:bg-red-600"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            {errors[index] && (
+              <p className="text-red-500 text-sm mt-2">{errors[index]}</p>
+            )}
+          </div>
+        ))}
+      </div>
+      
+      <div className="flex space-x-4 mt-4">
+        {urls.length < 5 && (
+          <button
+            onClick={addUrlField}
+            className="bg-gray-200 p-2 rounded hover:bg-gray-300"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            + Add Another URL
+          </button>
+        )}
+        
+        <button
+          onClick={shortenUrls}
+          disabled={Object.keys(errors).length > 0}
+          className={`p-2 rounded text-white ${
+            Object.keys(errors).length > 0
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-blue-500 hover:bg-blue-600'
+          }`}
+        >
+          Shorten URLs
+        </button>
+      </div>
+      
+      {shortenedUrls.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold mb-4">Shortened URLs</h2>
+          <div className="space-y-3">
+            {shortenedUrls.map((item, index) => (
+              <div key={index} className="border p-4 rounded-lg">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm text-gray-500">Original URL</p>
+                    <p className="break-all">{item.originalUrl}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500">Expires at</p>
+                    <p>{new Date(item.expiresAt).toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-500">Short URL</p>
+                  <a
+                    href={item.shortUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline break-all"
+                  >
+                    {item.shortUrl}
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
